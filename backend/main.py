@@ -249,7 +249,10 @@ async def agent_config(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(AgentRegistration).where(AgentRegistration.user_id == current_user.id)
+        select(AgentRegistration)
+        .where(AgentRegistration.user_id == current_user.id)
+        .order_by(AgentRegistration.created_at.desc())
+        .limit(1)
     )
     reg = result.scalar_one_or_none()
     if reg is None:
