@@ -34,15 +34,15 @@ interface ConnectResult {
 
 export default function Call() {
   const params = new URLSearchParams(window.location.search);
-  const callToken = params.get("token") ?? "";
+  const agentId = params.get("agent_id") ?? "";
 
   const [connectResult, setConnectResult] = useState<ConnectResult | null>(null);
   const [agentState, setAgentState] = useState<AgentState>("idle");
   const [error, setError] = useState("");
 
   const connect = useCallback(async () => {
-    if (!callToken) {
-      setError("No token provided in URL.");
+    if (!agentId) {
+      setError("No agent_id provided in URL.");
       return;
     }
     setAgentState("connecting");
@@ -51,7 +51,7 @@ export default function Call() {
       const res = await fetch("/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ call_token: callToken }),
+        body: JSON.stringify({ agent_id: agentId }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -65,9 +65,9 @@ export default function Call() {
     }
   }, [callToken]);
 
-  // Auto-connect when token param is present
+  // Auto-connect when agent_id param is present
   useEffect(() => {
-    if (callToken) {
+    if (agentId) {
       connect();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -285,20 +285,12 @@ async def heartbeat(
 
 
 class ConnectBody(BaseModel):
-    call_token: str
+    agent_id: str
 
 
 @app.post("/connect")
 async def connect(body: ConnectBody, db: AsyncSession = Depends(get_db)):
-    try:
-        payload = decode_session_token(body.call_token)
-        user_id: str = payload["sub"]
-        agent_id: str = payload.get("agent_id", "")
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid call token")
-
-    if not agent_id:
-        raise HTTPException(status_code=400, detail="call_token missing agent_id")
+    agent_id = body.agent_id
 
     result = await db.execute(
         select(AgentRegistration).where(AgentRegistration.id == agent_id)
@@ -314,7 +306,7 @@ async def connect(body: ConnectBody, db: AsyncSession = Depends(get_db)):
     lk_secret = decrypt(reg.livekit_api_secret)
 
     token = livekit_api.AccessToken(lk_key, lk_secret)
-    token.with_identity(user_id or "caller")
+    token.with_identity("caller")
     token.with_name("Caller")
     token.with_grants(livekit_api.VideoGrants(room_join=True, room=room_name))
     lk_token = token.to_jwt()
@@ -323,7 +315,7 @@ async def connect(body: ConnectBody, db: AsyncSession = Depends(get_db)):
     log = CallLog(
         id=str(uuid.uuid4()),
         agent_id=reg.id,
-        user_id=user_id or None,
+        user_id=None,
         room_name=room_name,
     )
     db.add(log)
