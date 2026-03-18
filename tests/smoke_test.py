@@ -161,16 +161,22 @@ async def test_agent_joins_and_greets() -> bool:
             async def collect():
                 async for frame_event in audio_stream:
                     audio_frames.append(frame_event.frame)
-                    if len(audio_frames) > 10:
-                        audio_received.set()
+                    # Signal once we see non-silent audio (agent has started speaking)
+                    if not audio_received.is_set():
+                        raw = bytes(frame_event.frame.data)
+                        if any(b != 0 for b in raw[::50]):
+                            audio_received.set()
 
             asyncio.ensure_future(collect())
 
     try:
         await room.connect(data["url"], data["token"])
-        await asyncio.wait_for(audio_received.wait(), timeout=15.0)
+        # Wait for the agent to start speaking (up to 20s)
+        await asyncio.wait_for(audio_received.wait(), timeout=20.0)
+        # Collect for another 4s to get the full greeting
+        await asyncio.sleep(4.0)
     except TimeoutError:
-        print("FAIL (timeout: no audio received within 15s)")
+        print("FAIL (timeout: no audio received within 20s)")
         await room.disconnect()
         return False
     except Exception as exc:
