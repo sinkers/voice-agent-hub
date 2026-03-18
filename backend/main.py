@@ -1,0 +1,401 @@
+import secrets
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+
+from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from livekit import api as livekit_api
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.auth import (
+    create_session_token,
+    decode_session_token,
+    device_code_expiry,
+    generate_device_code,
+)
+from backend.config import settings
+from backend.crypto import decrypt, encrypt
+from backend.database import get_db, init_db
+from backend.dependencies import get_current_user
+from backend.models import AgentRegistration, CallLog, DeviceCode, User
+
+app = FastAPI(title="Voice Agent Hub")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+STATIC_DIR = Path(__file__).parent / "static"
+
+
+@app.on_event("startup")
+async def startup() -> None:
+    await init_db()
+
+
+# ---------------------------------------------------------------------------
+# Device auth flow
+# ---------------------------------------------------------------------------
+
+
+class DeviceAuthResponse(BaseModel):
+    device_code: str
+    verification_url: str
+    expires_in: int = 300
+
+
+@app.post("/auth/device", response_model=DeviceAuthResponse)
+async def create_device_code(db: AsyncSession = Depends(get_db)):
+    code = generate_device_code()
+    device = DeviceCode(
+        code=code,
+        expires_at=device_code_expiry(),
+        approved=False,
+    )
+    db.add(device)
+    await db.commit()
+    return DeviceAuthResponse(
+        device_code=code,
+        verification_url=f"{settings.base_url}/auth/verify?code={code}",
+        expires_in=300,
+    )
+
+
+@app.get("/auth/device/token")
+async def poll_device_token(code: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(DeviceCode).where(DeviceCode.code == code))
+    device = result.scalar_one_or_none()
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device code not found")
+
+    now = datetime.now(timezone.utc)
+    if device.expires_at.replace(tzinfo=timezone.utc) < now:
+        return {"status": "expired"}
+
+    if not device.approved or device.token is None:
+        return {"status": "pending"}
+
+    return {"token": device.token}
+
+
+@app.get("/auth/verify", response_class=HTMLResponse)
+async def verify_page(code: str, request: Request):
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Connect Voice Agent</title>
+  <style>
+    body {{ font-family: system-ui, sans-serif; max-width: 480px; margin: 80px auto; padding: 0 20px; }}
+    h1 {{ font-size: 1.5rem; }}
+    .code {{ font-size: 2rem; font-weight: bold; letter-spacing: 0.2em; background: #f0f0f0;
+             padding: 12px 24px; border-radius: 8px; display: inline-block; margin: 16px 0; }}
+    input {{ width: 100%; padding: 10px; margin: 8px 0; font-size: 1rem; box-sizing: border-box;
+             border: 1px solid #ccc; border-radius: 6px; }}
+    button {{ width: 100%; padding: 12px; background: #2563eb; color: white; font-size: 1rem;
+              border: none; border-radius: 6px; cursor: pointer; margin-top: 8px; }}
+    button:hover {{ background: #1d4ed8; }}
+    #msg {{ margin-top: 16px; color: green; font-weight: bold; }}
+    #err {{ margin-top: 16px; color: red; }}
+  </style>
+</head>
+<body>
+  <h1>Connect Voice Agent</h1>
+  <p>Your device code:</p>
+  <div class="code">{code}</div>
+  <p>Enter your details to approve this connection:</p>
+  <form id="form">
+    <input type="text" id="name" placeholder="Your name" required />
+    <input type="email" id="email" placeholder="Email address" required />
+    <button type="submit">Approve Connection</button>
+  </form>
+  <div id="msg"></div>
+  <div id="err"></div>
+  <script>
+    document.getElementById('form').addEventListener('submit', async (e) => {{
+      e.preventDefault();
+      const res = await fetch('/auth/verify', {{
+        method: 'POST',
+        headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify({{
+          code: '{code}',
+          name: document.getElementById('name').value,
+          email: document.getElementById('email').value,
+        }})
+      }});
+      if (res.ok) {{
+        document.getElementById('form').style.display = 'none';
+        document.getElementById('msg').textContent = 'You are now connected. You can close this tab.';
+      }} else {{
+        const data = await res.json();
+        document.getElementById('err').textContent = data.detail || 'Error approving code.';
+      }}
+    }});
+  </script>
+</body>
+</html>"""
+    return HTMLResponse(html)
+
+
+class VerifyBody(BaseModel):
+    code: str
+    email: str
+    name: str
+
+
+@app.post("/auth/verify")
+async def verify_device(body: VerifyBody, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(DeviceCode).where(DeviceCode.code == body.code))
+    device = result.scalar_one_or_none()
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device code not found")
+
+    now = datetime.now(timezone.utc)
+    if device.expires_at.replace(tzinfo=timezone.utc) < now:
+        raise HTTPException(status_code=400, detail="Device code expired")
+
+    if device.approved:
+        raise HTTPException(status_code=400, detail="Already approved")
+
+    # Find or create user
+    result = await db.execute(select(User).where(User.email == body.email))
+    user = result.scalar_one_or_none()
+    if user is None:
+        user = User(id=str(uuid.uuid4()), email=body.email, name=body.name)
+        db.add(user)
+        await db.flush()
+    elif not user.name and body.name:
+        user.name = body.name
+
+    token = create_session_token(user.id)
+    device.user_id = user.id
+    device.approved = True
+    device.token = token
+
+    await db.commit()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Agent API
+# ---------------------------------------------------------------------------
+
+
+class RegisterBody(BaseModel):
+    agent_name: str
+    display_name: str
+    livekit_url: str
+    livekit_api_key: str
+    livekit_api_secret: str
+    deepgram_api_key: str
+    openai_api_key: str
+
+
+@app.post("/agent/register")
+async def register_agent(
+    body: RegisterBody,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(AgentRegistration).where(
+            AgentRegistration.user_id == current_user.id,
+            AgentRegistration.agent_name == body.agent_name,
+        )
+    )
+    reg = result.scalar_one_or_none()
+
+    if reg is None:
+        reg = AgentRegistration(
+            id=str(uuid.uuid4()),
+            user_id=current_user.id,
+            agent_name=body.agent_name,
+            display_name=body.display_name,
+            livekit_url=body.livekit_url,
+            livekit_api_key=encrypt(body.livekit_api_key),
+            livekit_api_secret=encrypt(body.livekit_api_secret),
+            deepgram_api_key=encrypt(body.deepgram_api_key),
+            openai_api_key=encrypt(body.openai_api_key),
+        )
+        db.add(reg)
+    else:
+        reg.display_name = body.display_name
+        reg.livekit_url = body.livekit_url
+        reg.livekit_api_key = encrypt(body.livekit_api_key)
+        reg.livekit_api_secret = encrypt(body.livekit_api_secret)
+        reg.deepgram_api_key = encrypt(body.deepgram_api_key)
+        reg.openai_api_key = encrypt(body.openai_api_key)
+
+    await db.commit()
+    await db.refresh(reg)
+
+    call_url_base = f"{settings.base_url}/call?agent_id={reg.id}"
+    return {"agent_id": reg.id, "call_url_base": call_url_base}
+
+
+@app.get("/agent/config")
+async def agent_config(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(AgentRegistration).where(AgentRegistration.user_id == current_user.id)
+    )
+    reg = result.scalar_one_or_none()
+    if reg is None:
+        raise HTTPException(status_code=404, detail="No agent registered")
+
+    return {
+        "livekit_url": reg.livekit_url,
+        "livekit_api_key": decrypt(reg.livekit_api_key),
+        "livekit_api_secret": decrypt(reg.livekit_api_secret),
+        "deepgram_api_key": decrypt(reg.deepgram_api_key),
+        "openai_api_key": decrypt(reg.openai_api_key),
+    }
+
+
+@app.post("/agent/heartbeat")
+async def heartbeat(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(AgentRegistration).where(AgentRegistration.user_id == current_user.id)
+    )
+    reg = result.scalar_one_or_none()
+    if reg is not None:
+        reg.last_seen = datetime.now(timezone.utc)
+        await db.commit()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Call flow
+# ---------------------------------------------------------------------------
+
+
+class ConnectBody(BaseModel):
+    call_token: str
+
+
+@app.post("/connect")
+async def connect(body: ConnectBody, db: AsyncSession = Depends(get_db)):
+    try:
+        payload = decode_session_token(body.call_token)
+        user_id: str = payload["sub"]
+        agent_id: str = payload.get("agent_id", "")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid call token")
+
+    if not agent_id:
+        raise HTTPException(status_code=400, detail="call_token missing agent_id")
+
+    result = await db.execute(
+        select(AgentRegistration).where(AgentRegistration.id == agent_id)
+    )
+    reg = result.scalar_one_or_none()
+    if reg is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    room_name = f"call-{secrets.token_hex(8)}"
+
+    # Issue LiveKit participant token
+    lk_key = decrypt(reg.livekit_api_key)
+    lk_secret = decrypt(reg.livekit_api_secret)
+
+    token = livekit_api.AccessToken(lk_key, lk_secret)
+    token.with_identity(user_id or "caller")
+    token.with_name("Caller")
+    token.with_grants(livekit_api.VideoGrants(room_join=True, room=room_name))
+    lk_token = token.to_jwt()
+
+    # Log the call
+    log = CallLog(
+        id=str(uuid.uuid4()),
+        agent_id=reg.id,
+        user_id=user_id or None,
+        room_name=room_name,
+    )
+    db.add(log)
+    await db.commit()
+
+    return {
+        "token": lk_token,
+        "url": reg.livekit_url,
+        "room_name": room_name,
+        "agent": reg.display_name,
+    }
+
+
+import jwt as _jwt
+
+
+@app.get("/call_url")
+async def get_call_url(
+    agent_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(AgentRegistration).where(
+            AgentRegistration.id == agent_id,
+            AgentRegistration.user_id == current_user.id,
+        )
+    )
+    reg = result.scalar_one_or_none()
+    if reg is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    from datetime import timedelta
+
+    call_token = _jwt.encode(
+        {
+            "sub": current_user.id,
+            "agent_id": agent_id,
+            "exp": datetime.now(timezone.utc) + timedelta(hours=24),
+        },
+        settings.hub_secret,
+        algorithm="HS256",
+    )
+    url = f"{settings.base_url}/call?token={call_token}"
+    return {"url": url, "expires_in": 86400}
+
+
+# ---------------------------------------------------------------------------
+# Dashboard stub
+# ---------------------------------------------------------------------------
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard():
+    return HTMLResponse(
+        "<html><body><h1>Dashboard coming soon</h1></body></html>"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Serve React static build (fallback SPA routing)
+# ---------------------------------------------------------------------------
+
+if STATIC_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=str(STATIC_DIR / "assets")), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str):
+        file_path = STATIC_DIR / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(str(file_path))
+        index = STATIC_DIR / "index.html"
+        if index.exists():
+            return FileResponse(str(index))
+        raise HTTPException(status_code=404, detail="Not found")
