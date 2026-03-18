@@ -1,11 +1,12 @@
 import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+import jwt as _jwt
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from livekit import api as livekit_api
 from pydantic import BaseModel
@@ -14,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.auth import (
     create_session_token,
-    decode_session_token,
     device_code_expiry,
     generate_device_code,
 )
@@ -77,8 +77,8 @@ async def poll_device_token(code: str, db: AsyncSession = Depends(get_db)):
     if device is None:
         raise HTTPException(status_code=404, detail="Device code not found")
 
-    now = datetime.now(timezone.utc)
-    if device.expires_at.replace(tzinfo=timezone.utc) < now:
+    now = datetime.now(UTC)
+    if device.expires_at.replace(tzinfo=UTC) < now:
         return {"status": "expired"}
 
     if not device.approved or device.token is None:
@@ -160,8 +160,8 @@ async def verify_device(body: VerifyBody, db: AsyncSession = Depends(get_db)):
     if device is None:
         raise HTTPException(status_code=404, detail="Device code not found")
 
-    now = datetime.now(timezone.utc)
-    if device.expires_at.replace(tzinfo=timezone.utc) < now:
+    now = datetime.now(UTC)
+    if device.expires_at.replace(tzinfo=UTC) < now:
         raise HTTPException(status_code=400, detail="Device code expired")
 
     if device.approved:
@@ -256,6 +256,7 @@ async def agent_config(
         raise HTTPException(status_code=404, detail="No agent registered")
 
     return {
+        "display_name": reg.display_name,
         "livekit_url": reg.livekit_url,
         "livekit_api_key": decrypt(reg.livekit_api_key),
         "livekit_api_secret": decrypt(reg.livekit_api_secret),
@@ -274,7 +275,7 @@ async def heartbeat(
     )
     reg = result.scalar_one_or_none()
     if reg is not None:
-        reg.last_seen = datetime.now(timezone.utc)
+        reg.last_seen = datetime.now(UTC)
         await db.commit()
     return {"ok": True}
 
@@ -329,9 +330,6 @@ async def connect(body: ConnectBody, db: AsyncSession = Depends(get_db)):
     }
 
 
-import jwt as _jwt
-
-
 @app.get("/call_url")
 async def get_call_url(
     agent_id: str,
@@ -348,13 +346,11 @@ async def get_call_url(
     if reg is None:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    from datetime import timedelta
-
     call_token = _jwt.encode(
         {
             "sub": current_user.id,
             "agent_id": agent_id,
-            "exp": datetime.now(timezone.utc) + timedelta(hours=24),
+            "exp": datetime.now(UTC) + timedelta(hours=24),
         },
         settings.hub_secret,
         algorithm="HS256",

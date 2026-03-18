@@ -1,5 +1,5 @@
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 
@@ -15,13 +15,13 @@ def generate_device_code() -> str:
 
 
 def device_code_expiry() -> datetime:
-    return datetime.now(timezone.utc) + DEVICE_CODE_EXPIRES
+    return datetime.now(UTC) + DEVICE_CODE_EXPIRES
 
 
 def create_session_token(user_id: str) -> str:
     payload = {
         "sub": user_id,
-        "exp": datetime.now(timezone.utc) + SESSION_TOKEN_EXPIRES,
+        "exp": datetime.now(UTC) + SESSION_TOKEN_EXPIRES,
     }
     return jwt.encode(payload, settings.hub_secret, algorithm=ALGORITHM)
 

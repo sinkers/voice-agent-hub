@@ -1,4 +1,5 @@
 from cryptography.fernet import Fernet
+
 from backend.config import settings
 
 _fernet: Fernet | None = None
