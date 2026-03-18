@@ -5,7 +5,7 @@ import jwt
 
 from backend.config import settings
 
-DEVICE_CODE_EXPIRES = timedelta(seconds=300)
+DEVICE_CODE_EXPIRES = timedelta(seconds=900)
 SESSION_TOKEN_EXPIRES = timedelta(days=30)
 ALGORITHM = "HS256"
 

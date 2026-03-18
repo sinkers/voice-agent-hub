@@ -66,7 +66,7 @@ async def create_device_code(db: AsyncSession = Depends(get_db)):
     return DeviceAuthResponse(
         device_code=code,
         verification_url=f"{settings.base_url}/auth/verify?code={code}",
-        expires_in=300,
+        expires_in=900,
     )
 
 
