@@ -308,12 +308,22 @@ async def connect(body: ConnectBody, db: AsyncSession = Depends(get_db)):
     # Issue LiveKit participant token
     lk_key = decrypt(reg.livekit_api_key)
     lk_secret = decrypt(reg.livekit_api_secret)
+    lk_url = reg.livekit_url
 
     token = livekit_api.AccessToken(lk_key, lk_secret)
     token.with_identity("caller")
     token.with_name("Caller")
     token.with_grants(livekit_api.VideoGrants(room_join=True, room=room_name))
     lk_token = token.to_jwt()
+
+    # Dispatch the agent to the room explicitly (required when agent_name is set)
+    async with livekit_api.LiveKitAPI(url=lk_url, api_key=lk_key, api_secret=lk_secret) as lk:
+        await lk.agent_dispatch.create_dispatch(
+            livekit_api.CreateAgentDispatchRequest(
+                agent_name=reg.agent_name,
+                room=room_name,
+            )
+        )
 
     # Log the call
     log = CallLog(
