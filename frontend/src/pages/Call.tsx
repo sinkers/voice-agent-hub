@@ -63,7 +63,7 @@ export default function Call() {
       setAgentState("error");
       setError(err instanceof Error ? err.message : "Connection failed");
     }
-  }, [callToken]);
+  }, [agentId]);
 
   // Auto-connect when agent_id param is present
   useEffect(() => {
