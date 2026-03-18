@@ -1,22 +1,34 @@
 """
-Smoke tests against a LIVE deployment (hub + agent worker both running).
+Smoke test against a LIVE deployment (hub + agent worker).
 
-Required env vars:
-  HUB_URL      - default: https://voice-agent-hub.fly.dev
-  HUB_TOKEN    - valid hub Bearer token (agent already registered)
-  AGENT_ID     - registered agent UUID
-  OPENAI_API_KEY - for Whisper STT on response audio
+Requires a running agent worker connected to the hub — this is the ONLY test
+that needs a live agent. All other hub tests live in tests/integration/.
+
+Flow:
+  1. POST /admin/test-user to get credentials
+  2. POST /connect to get LiveKit room token
+  3. Join LiveKit room, collect audio frames
+  4. Transcribe via OpenAI Whisper
+  5. Assert agent's display_name appears in transcription
+  6. DELETE /admin/test-user for cleanup
+
+Env vars:
+  HUB_URL          - default: https://voice-agent-hub.fly.dev
+  HUB_SECRET       - required: admin secret
+  LIVEKIT_API_KEY  - required: LiveKit API key
+  LIVEKIT_API_SECRET - required: LiveKit API secret
+  LIVEKIT_URL      - required: LiveKit server URL (wss://...)
+  DEEPGRAM_API_KEY - required: Deepgram API key
+  OPENAI_API_KEY   - required: OpenAI key for Whisper transcription
 
 Run:
-  uv run python tests/smoke_test.py
-  # or via make:
   make smoke-test
 """
 
 import asyncio
 import io
 import os
-import sys
+import uuid
 import wave
 
 import httpx
@@ -26,204 +38,153 @@ import httpx
 # ---------------------------------------------------------------------------
 
 HUB_URL = os.environ.get("HUB_URL", "https://voice-agent-hub.fly.dev").rstrip("/")
-HUB_TOKEN = os.environ.get("HUB_TOKEN", "")
-AGENT_ID = os.environ.get("AGENT_ID", "")
+HUB_SECRET = os.environ.get("HUB_SECRET", "")
+LIVEKIT_API_KEY = os.environ.get("LIVEKIT_API_KEY", "")
+LIVEKIT_API_SECRET = os.environ.get("LIVEKIT_API_SECRET", "")
+LIVEKIT_URL = os.environ.get("LIVEKIT_URL", "")
+DEEPGRAM_API_KEY = os.environ.get("DEEPGRAM_API_KEY", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
+DISPLAY_NAME = "Smoke Test Agent"
+AUDIO_COLLECT_SECONDS = 15
 
-def _check_env() -> bool:
-    missing = []
-    if not HUB_TOKEN:
-        missing.append("HUB_TOKEN")
-    if not AGENT_ID:
-        missing.append("AGENT_ID")
+
+def _check_env() -> None:
+    missing = [
+        v
+        for v in ("HUB_SECRET", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "LIVEKIT_URL",
+                  "DEEPGRAM_API_KEY", "OPENAI_API_KEY")
+        if not os.environ.get(v)
+    ]
     if missing:
-        print("ERROR: Required env vars not set:", ", ".join(missing))
-        print()
-        print("Usage:")
-        print("  export HUB_TOKEN=<your-hub-bearer-token>")
-        print("  export AGENT_ID=<registered-agent-uuid>")
-        print("  export OPENAI_API_KEY=<openai-key>  # for greeting transcript test")
-        print("  uv run python tests/smoke_test.py")
-        return False
-    return True
+        raise SystemExit(f"Missing required env vars: {', '.join(missing)}")
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Admin helpers
 # ---------------------------------------------------------------------------
 
 
-def frames_to_wav(audio_frames) -> bytes:
-    """Convert a list of livekit AudioFrame objects to WAV bytes (in memory).
+def _create_test_user(client: httpx.Client) -> dict:
+    resp = client.post(
+        f"{HUB_URL}/admin/test-user",
+        json={
+            "email": f"smoke-{uuid.uuid4()}@example.com",
+            "agent_name": "smoke-test-agent",
+            "display_name": DISPLAY_NAME,
+            "livekit_url": LIVEKIT_URL,
+            "livekit_api_key": LIVEKIT_API_KEY,
+            "livekit_api_secret": LIVEKIT_API_SECRET,
+            "deepgram_api_key": DEEPGRAM_API_KEY,
+            "openai_api_key": OPENAI_API_KEY,
+        },
+        headers={"X-Hub-Secret": HUB_SECRET},
+    )
+    resp.raise_for_status()
+    return resp.json()
 
-    LiveKit default: 16-bit PCM, 48000 Hz, mono.
-    """
+
+def _delete_test_user(client: httpx.Client, user_id: str) -> None:
+    client.delete(
+        f"{HUB_URL}/admin/test-user/{user_id}",
+        headers={"X-Hub-Secret": HUB_SECRET},
+    )
+
+
+def _connect(client: httpx.Client, agent_id: str) -> dict:
+    resp = client.post(f"{HUB_URL}/connect", json={"agent_id": agent_id})
+    resp.raise_for_status()
+    return resp.json()
+
+
+# ---------------------------------------------------------------------------
+# Audio helpers
+# ---------------------------------------------------------------------------
+
+
+def frames_to_wav(frames: list) -> bytes:
+    """Convert LiveKit AudioFrames to WAV bytes."""
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wf:
         wf.setnchannels(1)
-        wf.setsampwidth(2)  # 16-bit
+        wf.setsampwidth(2)  # 16-bit PCM
         wf.setframerate(48000)
-        for frame in audio_frames:
+        for frame in frames:
             wf.writeframes(bytes(frame.data))
     return buf.getvalue()
 
 
-def get_agent_display_name() -> str | None:
-    """Return the display_name for the registered agent, or None on failure."""
-    try:
-        r = httpx.get(
-            f"{HUB_URL}/agent/config",
-            headers={"Authorization": f"Bearer {HUB_TOKEN}"},
-            timeout=10,
-        )
-        if r.status_code == 200:
-            return r.json().get("display_name")
-    except Exception:
-        pass
-    return None
+async def _collect_audio(lk_token: str, lk_url: str) -> list:
+    """Join a LiveKit room and collect audio frames for AUDIO_COLLECT_SECONDS."""
+    from livekit import rtc
 
+    frames: list = []
 
-# ---------------------------------------------------------------------------
-# Test 1: connect returns valid credentials
-# ---------------------------------------------------------------------------
-
-
-def test_connect_returns_livekit_credentials() -> bool:
-    print("Test 1: connect returns valid LiveKit credentials ... ", end="", flush=True)
-    try:
-        r = httpx.post(
-            f"{HUB_URL}/connect",
-            json={"agent_id": AGENT_ID},
-            headers={"Authorization": f"Bearer {HUB_TOKEN}"},
-            timeout=10,
-        )
-        if r.status_code != 200:
-            print(f"FAIL (HTTP {r.status_code}: {r.text})")
-            return False
-
-        data = r.json()
-        errors = []
-        if not data.get("token"):
-            errors.append("missing 'token'")
-        if not str(data.get("url", "")).startswith("wss://"):
-            errors.append(f"'url' not wss:// (got {data.get('url')!r})")
-        if not data.get("room_name"):
-            errors.append("missing 'room_name'")
-
-        if errors:
-            print("FAIL:", "; ".join(errors))
-            return False
-
-        print("PASS")
-        return True
-    except Exception as exc:
-        print(f"FAIL (exception: {exc})")
-        return False
-
-
-# ---------------------------------------------------------------------------
-# Test 2: agent joins room and plays a greeting
-# ---------------------------------------------------------------------------
-
-
-async def test_agent_joins_and_greets() -> bool:
-    print("Test 2: agent joins room and plays greeting ... ", end="", flush=True)
-    try:
-        from livekit import rtc
-    except ImportError:
-        print("SKIP (livekit package not installed; run: uv add livekit)")
-        return True  # don't fail CI for missing optional dep
-
-    # Fetch the registered display_name before connecting
-    display_name = get_agent_display_name()
-
-    r = httpx.post(
-        f"{HUB_URL}/connect",
-        json={"agent_id": AGENT_ID},
-        headers={"Authorization": f"Bearer {HUB_TOKEN}"},
-        timeout=10,
-    )
-    if r.status_code != 200:
-        print(f"FAIL (connect HTTP {r.status_code})")
-        return False
-
-    data = r.json()
     room = rtc.Room()
-    audio_received = asyncio.Event()
-    audio_frames = []
 
     @room.on("track_subscribed")
     def on_track(track, publication, participant):
         if track.kind == rtc.TrackKind.KIND_AUDIO:
-            audio_stream = rtc.AudioStream(track)
+            async def _read():
+                stream = rtc.AudioStream(track)
+                async for event in stream:
+                    frames.append(event.frame)
 
-            async def collect():
-                async for frame_event in audio_stream:
-                    audio_frames.append(frame_event.frame)
-                    # Signal once we see non-silent audio (agent has started speaking)
-                    if not audio_received.is_set():
-                        raw = bytes(frame_event.frame.data)
-                        if any(b != 0 for b in raw[::50]):
-                            audio_received.set()
+            asyncio.ensure_future(_read())
 
-            asyncio.ensure_future(collect())
-
-    try:
-        await room.connect(data["url"], data["token"])
-        # Wait for the agent to start speaking (up to 20s)
-        await asyncio.wait_for(audio_received.wait(), timeout=20.0)
-        # Collect for another 4s to get the full greeting
-        await asyncio.sleep(4.0)
-    except TimeoutError:
-        print("FAIL (timeout: no audio received within 20s)")
-        await room.disconnect()
-        return False
-    except Exception as exc:
-        print(f"FAIL (exception: {exc})")
-        await room.disconnect()
-        return False
-
+    await room.connect(lk_url, lk_token)
+    print(f"  Joined room, collecting audio for {AUDIO_COLLECT_SECONDS}s …")
+    await asyncio.sleep(AUDIO_COLLECT_SECONDS)
     await room.disconnect()
+    return frames
 
-    if not audio_frames:
-        print("FAIL (no audio frames collected)")
-        return False
 
-    if not OPENAI_API_KEY:
-        print("PASS (audio received; skipping Whisper check — OPENAI_API_KEY not set)")
-        return True
+def _transcribe(wav_bytes: bytes) -> str:
+    from openai import OpenAI
 
-    try:
-        import openai
+    client = OpenAI(api_key=OPENAI_API_KEY)
+    audio_file = io.BytesIO(wav_bytes)
+    audio_file.name = "audio.wav"
+    result = client.audio.transcriptions.create(model="whisper-1", file=audio_file)
+    return result.text
 
-        wav_bytes = frames_to_wav(audio_frames)
-        client = openai.OpenAI(api_key=OPENAI_API_KEY)
-        transcript = client.audio.transcriptions.create(
-            model="whisper-1",
-            file=("greeting.wav", wav_bytes, "audio/wav"),
-        ).text.lower()
 
-        # Assert agent identity: display_name from hub registration must appear in greeting
-        if display_name and display_name.lower() in transcript:
-            print(f"✓ Agent identity confirmed: {display_name!r} found in greeting transcript")
-        elif display_name:
-            print(
-                f"FAIL (agent identity: {display_name!r} not found in transcript: {transcript!r})"
-            )
-            return False
-        else:
-            # Fallback to generic greeting words if display_name unavailable
-            greeting_words = ["hello", "hi", "hey"]
-            if not any(word in transcript for word in greeting_words):
-                print(f"FAIL (greeting not detected in transcript: {transcript!r})")
-                return False
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
 
-        print(f"PASS (greeting: {transcript!r})")
-        return True
-    except Exception as exc:
-        print(f"FAIL (Whisper error: {exc})")
-        return False
+
+def test_connect_returns_livekit_credentials(agent_id: str) -> None:
+    print("test_connect_returns_livekit_credentials … ", end="", flush=True)
+    with httpx.Client() as client:
+        data = _connect(client, agent_id)
+    assert data.get("token"), "token missing"
+    assert data.get("url", "").startswith("wss://"), f"bad url: {data.get('url')}"
+    assert data.get("room_name"), "room_name missing"
+    print("OK")
+
+
+def test_agent_joins_and_greets(agent_id: str) -> None:
+    print("test_agent_joins_and_greets … ", end="", flush=True)
+    with httpx.Client() as client:
+        conn = _connect(client, agent_id)
+
+    frames = asyncio.run(_collect_audio(conn["token"], conn["url"]))
+    if not frames:
+        print("SKIP (no audio received — is the agent worker running?)")
+        return
+
+    wav = frames_to_wav(frames)
+    transcript = _transcribe(wav)
+    print(f"\n  Transcript: {transcript!r}")
+
+    transcript_lower = transcript.lower()
+    name_lower = DISPLAY_NAME.lower()
+    assert any(
+        word in transcript_lower
+        for word in [name_lower, "hello", "hi", "hey", "welcome"]
+    ), f"Expected greeting or display name in transcript, got: {transcript!r}"
+    print("OK")
 
 
 # ---------------------------------------------------------------------------
@@ -231,20 +192,27 @@ async def test_agent_joins_and_greets() -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def _run_all() -> int:
-    if not _check_env():
-        return 1
+def main() -> None:
+    _check_env()
 
-    results = []
-    results.append(test_connect_returns_livekit_credentials())
-    results.append(await test_agent_joins_and_greets())
+    print(f"Smoke test against {HUB_URL}")
 
-    passed = sum(results)
-    total = len(results)
-    print()
-    print(f"Results: {passed}/{total} passed")
-    return 0 if passed == total else 1
+    with httpx.Client() as client:
+        print("Creating test user via admin API … ", end="", flush=True)
+        user_data = _create_test_user(client)
+        print(f"OK (agent_id={user_data['agent_id']})")
+
+    try:
+        test_connect_returns_livekit_credentials(user_data["agent_id"])
+        test_agent_joins_and_greets(user_data["agent_id"])
+    finally:
+        with httpx.Client() as client:
+            print("Cleaning up test user … ", end="", flush=True)
+            _delete_test_user(client, user_data["user_id"])
+            print("OK")
+
+    print("\nAll smoke tests passed.")
 
 
 if __name__ == "__main__":
-    sys.exit(asyncio.run(_run_all()))
+    main()

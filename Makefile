@@ -1,4 +1,4 @@
-.PHONY: test lint lint-fix build-frontend smoke-test test-all ci
+.PHONY: test lint lint-fix build-frontend smoke-test integration-test test-all ci
 
 test:
 	uv run pytest tests/ -v
@@ -19,8 +19,10 @@ ci:
 	uv run ruff check backend/ tests/
 	cd frontend && npm ci && npm run build
 
-# Requires: HUB_TOKEN, AGENT_ID, OPENAI_API_KEY (optional)
 smoke-test:
 	uv run python tests/smoke_test.py
 
-test-all: ci smoke-test
+integration-test:
+	uv run pytest tests/integration/ -v
+
+test-all: ci integration-test

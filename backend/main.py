@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import jwt as _jwt
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -357,6 +357,76 @@ async def get_call_url(
     )
     url = f"{settings.base_url}/call?token={call_token}"
     return {"url": url, "expires_in": 86400}
+
+
+# ---------------------------------------------------------------------------
+# Admin endpoints
+# ---------------------------------------------------------------------------
+
+
+def _require_hub_secret(x_hub_secret: str = Header(default="")) -> None:
+    if not x_hub_secret or x_hub_secret != settings.hub_secret:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
+class TestUserBody(BaseModel):
+    email: str
+    agent_name: str
+    display_name: str
+    livekit_url: str
+    livekit_api_key: str
+    livekit_api_secret: str
+    deepgram_api_key: str
+    openai_api_key: str
+
+
+@app.post("/admin/test-user")
+async def create_test_user(
+    body: TestUserBody,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(_require_hub_secret),
+):
+    user = User(id=str(uuid.uuid4()), email=body.email, name="Integration Test")
+    db.add(user)
+    await db.flush()
+
+    reg = AgentRegistration(
+        id=str(uuid.uuid4()),
+        user_id=user.id,
+        agent_name=body.agent_name,
+        display_name=body.display_name,
+        livekit_url=body.livekit_url,
+        livekit_api_key=encrypt(body.livekit_api_key),
+        livekit_api_secret=encrypt(body.livekit_api_secret),
+        deepgram_api_key=encrypt(body.deepgram_api_key),
+        openai_api_key=encrypt(body.openai_api_key),
+    )
+    db.add(reg)
+    await db.commit()
+
+    token = create_session_token(user.id)
+    call_url_base = f"{settings.base_url}/call?agent_id={reg.id}"
+    return {
+        "user_id": user.id,
+        "token": token,
+        "agent_id": reg.id,
+        "call_url_base": call_url_base,
+    }
+
+
+@app.delete("/admin/test-user/{user_id}")
+async def delete_test_user(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(_require_hub_secret),
+):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.delete(user)
+    await db.commit()
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------

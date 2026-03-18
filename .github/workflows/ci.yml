@@ -39,3 +39,22 @@ jobs:
         working-directory: frontend
         run: npm ci && npm run build
         # Catches TypeScript errors before they hit Fly deploy
+
+  integration:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+    needs: [backend-tests, lint, frontend-build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --extra test
+      - name: Run integration tests
+        env:
+          HUB_URL: https://voice-agent-hub.fly.dev
+          HUB_SECRET: ${{ secrets.HUB_SECRET }}
+          LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
+          LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
+          LIVEKIT_URL: ${{ secrets.LIVEKIT_URL }}
+          DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: uv run pytest tests/integration/ -v
