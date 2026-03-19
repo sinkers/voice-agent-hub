@@ -1,6 +1,10 @@
+import logging
+
 from cryptography.fernet import Fernet
 
 from backend.config import settings
+
+logger = logging.getLogger(__name__)
 
 _fernet: Fernet | None = None
 
@@ -16,8 +20,20 @@ def _get_fernet() -> Fernet:
 
 
 def encrypt(value: str) -> str:
-    return _get_fernet().encrypt(value.encode()).decode()
+    try:
+        encrypted = _get_fernet().encrypt(value.encode()).decode()
+        logger.debug("Value encrypted successfully")
+        return encrypted
+    except Exception as e:
+        logger.error(f"Encryption failed: {e}")
+        raise
 
 
 def decrypt(value: str) -> str:
-    return _get_fernet().decrypt(value.encode()).decode()
+    try:
+        decrypted = _get_fernet().decrypt(value.encode()).decode()
+        logger.debug("Value decrypted successfully")
+        return decrypted
+    except Exception as e:
+        logger.error(f"Decryption failed: {e}")
+        raise
