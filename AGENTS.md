@@ -100,12 +100,50 @@ make integration-test
 
 ## Testing Guidelines
 
+### ⚠️ IMPORTANT: Test-First Development
+
+**Before starting work on any new feature, write the tests first.**
+
+This ensures:
+- Clear requirements and acceptance criteria
+- Better design (testable code is better code)
+- No forgotten edge cases
+- Faster development (no back-and-forth)
+- Higher confidence in your implementation
+
+**Process:**
+1. **Write tests first** - Define what success looks like
+2. **Run tests** - They should fail (feature doesn't exist yet)
+3. **Implement feature** - Make the tests pass
+4. **Refactor** - Clean up with test safety net
+
+**Example:**
+```bash
+# 1. Write test for new feature
+# tests/test_new_feature.py
+
+# 2. Run test (should fail)
+make test
+
+# 3. Implement feature
+# backend/main.py - add endpoint
+
+# 4. Run test again (should pass)
+make test
+
+# 5. Commit both test and implementation
+git add tests/test_new_feature.py backend/main.py
+git commit -m "feat: add new feature with tests"
+```
+
 ### Writing Tests
 
-- Place unit tests in `tests/`
-- Place integration tests in `tests/integration/`
+- Place backend unit tests in `tests/`
+- Place backend integration tests in `tests/integration/`
+- Place frontend E2E tests in `frontend/tests/e2e/`
 - Use descriptive test names: `test_device_flow_complete`, `test_agent_register`
-- Use pytest fixtures from `tests/conftest.py`
+- Use pytest fixtures from `tests/conftest.py` for backend
+- Use Playwright for frontend E2E tests
 
 ### Test Structure
 
