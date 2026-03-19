@@ -1,10 +1,11 @@
+import asyncio
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import jwt as _jwt
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -292,8 +293,22 @@ class ConnectBody(BaseModel):
     agent_id: str
 
 
+async def _dispatch_agent(lk_url: str, lk_key: str, lk_secret: str,
+                           agent_name: str, room_name: str) -> None:
+    """Dispatch agent after a short delay so the caller can join first."""
+    await asyncio.sleep(1.5)
+    async with livekit_api.LiveKitAPI(url=lk_url, api_key=lk_key, api_secret=lk_secret) as lk:
+        await lk.agent_dispatch.create_dispatch(
+            livekit_api.CreateAgentDispatchRequest(
+                agent_name=agent_name,
+                room=room_name,
+            )
+        )
+
+
 @app.post("/connect")
-async def connect(body: ConnectBody, db: AsyncSession = Depends(get_db)):
+async def connect(body: ConnectBody, background_tasks: BackgroundTasks,
+                  db: AsyncSession = Depends(get_db)):
     agent_id = body.agent_id
 
     result = await db.execute(
@@ -316,14 +331,11 @@ async def connect(body: ConnectBody, db: AsyncSession = Depends(get_db)):
     token.with_grants(livekit_api.VideoGrants(room_join=True, room=room_name))
     lk_token = token.to_jwt()
 
-    # Dispatch the agent to the room explicitly (required when agent_name is set)
-    async with livekit_api.LiveKitAPI(url=lk_url, api_key=lk_key, api_secret=lk_secret) as lk:
-        await lk.agent_dispatch.create_dispatch(
-            livekit_api.CreateAgentDispatchRequest(
-                agent_name=reg.agent_name,
-                room=room_name,
-            )
-        )
+    # Dispatch agent after response is sent so caller can join the room first.
+    # 1.5s delay ensures the caller has connected before the agent arrives.
+    background_tasks.add_task(
+        _dispatch_agent, lk_url, lk_key, lk_secret, reg.agent_name, room_name
+    )
 
     # Log the call
     log = CallLog(
