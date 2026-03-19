@@ -40,10 +40,43 @@ jobs:
         run: npm ci && npm run build
         # Catches TypeScript errors before they hit Fly deploy
 
+  frontend-e2e:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+    needs: [frontend-build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E tests against production
+        working-directory: frontend
+        env:
+          BASE_URL: https://voice-agent-hub.fly.dev
+        run: npm run test:e2e
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
+
   integration:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master'
-    needs: [backend-tests, lint, frontend-build]
+    needs: [backend-tests, lint, frontend-build, frontend-e2e]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
