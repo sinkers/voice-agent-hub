@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from livekit import api as livekit_api
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -158,9 +158,14 @@ async def verify_page(code: str, request: Request):
 
 
 class VerifyBody(BaseModel):
-    code: str
-    email: str
-    name: str
+    code: str = Field(..., pattern=r"^[0-9a-f]{32}$", description="32-character hex device code")
+    email: EmailStr = Field(..., description="Valid email address")
+    name: str = Field(..., min_length=1, max_length=255, description="User's display name")
+
+    @field_validator("name")
+    @classmethod
+    def strip_whitespace(cls, v: str) -> str:
+        return v.strip()
 
 
 @app.post("/auth/verify")
