@@ -90,6 +90,14 @@ async def poll_device_token(code: str, db: AsyncSession = Depends(get_db)):
 
 @app.get("/auth/verify", response_class=HTMLResponse)
 async def verify_page(code: str, request: Request):
+    import json
+    from html import escape
+
+    # Escape for HTML context
+    code_html = escape(code)
+    # Escape for JavaScript context
+    code_js = json.dumps(code)
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -113,7 +121,7 @@ async def verify_page(code: str, request: Request):
 <body>
   <h1>Connect Voice Agent</h1>
   <p>Your device code:</p>
-  <div class="code">{code}</div>
+  <div class="code">{code_html}</div>
   <p>Enter your details to approve this connection:</p>
   <form id="form">
     <input type="text" id="name" placeholder="Your name" required />
@@ -129,7 +137,7 @@ async def verify_page(code: str, request: Request):
         method: 'POST',
         headers: {{ 'Content-Type': 'application/json' }},
         body: JSON.stringify({{
-          code: '{code}',
+          code: {code_js},
           name: document.getElementById('name').value,
           email: document.getElementById('email').value,
         }})

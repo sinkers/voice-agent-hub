@@ -1,8 +1,11 @@
 import {
+  ControlBar,
   LiveKitRoom,
   RoomAudioRenderer,
   useVoiceAssistant,
 } from "@livekit/components-react";
+import { useRoomContext } from "@livekit/components-react";
+
 import { useCallback, useEffect, useState } from "react";
 
 type AgentState = "idle" | "connecting" | "listening" | "thinking" | "speaking" | "error";
@@ -100,6 +103,8 @@ export default function Call() {
       onDisconnected={() => setConnectResult(null)}
     >
       <RoomAudioRenderer />
+      <MicPublisher />
+      <ControlBar controls={{ microphone: true, camera: false, screenShare: false, leave: false }} />
       <AgentUI
         agentName={connectResult.agent}
         state={agentState}
@@ -107,6 +112,17 @@ export default function Call() {
       />
     </LiveKitRoom>
   );
+}
+
+/** Explicitly enable the local microphone once inside the LiveKit room. */
+function MicPublisher() {
+  const room = useRoomContext();
+  useEffect(() => {
+    room.localParticipant.setMicrophoneEnabled(true).catch((err: Error) => {
+      console.warn("Failed to enable microphone:", err);
+    });
+  }, [room]);
+  return null;
 }
 
 function AgentUI({

@@ -1,15 +1,20 @@
 import os
 
-from cryptography.fernet import Fernet
-
 
 def _get_encryption_key() -> str:
     key = os.getenv("HUB_ENCRYPTION_KEY")
     if not key:
-        key = Fernet.generate_key().decode()
-        print(
-            f"WARNING: HUB_ENCRYPTION_KEY not set. Generated ephemeral key: {key}\n"
-            "Set this env var to persist encrypted data across restarts."
+        raise RuntimeError(
+            "HUB_ENCRYPTION_KEY must be set in environment. "
+            "Generate one with: python -c 'from cryptography.fernet import Fernet; "
+            "print(Fernet.generate_key().decode())'"
+        )
+    # Fernet keys are 32 bytes base64-encoded, resulting in 44 characters
+    if len(key) < 32:
+        raise RuntimeError(
+            f"HUB_ENCRYPTION_KEY is too short ({len(key)} chars). "
+            "Must be at least 32 characters. Generate a secure key with: "
+            "python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
         )
     return key
 
