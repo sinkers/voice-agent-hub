@@ -5,6 +5,7 @@ import {
   useVoiceAssistant,
   useTrackVolume,
   useTracks,
+  useMediaDeviceSelect,
 } from "@livekit/components-react";
 import { useRoomContext } from "@livekit/components-react";
 import { Track } from "livekit-client";
@@ -152,54 +153,32 @@ function MicPublisher() {
 
 /** Microphone selector component - shows available mics and allows switching */
 function MicrophoneSelector() {
-  const room = useRoomContext();
-  const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
-  const [selectedDevice, setSelectedDevice] = useState<string>("");
-
-  // Enumerate audio devices
-  useEffect(() => {
-    const enumerateDevices = async () => {
-      try {
-        const allDevices = await navigator.mediaDevices.enumerateDevices();
-        const audioInputs = allDevices.filter((d) => d.kind === "audioinput");
-        setAudioDevices(audioInputs);
-        console.log("[MicSelector] Found audio devices:", audioInputs.length, audioInputs.map((d) => d.label));
-      } catch (err) {
-        console.error("[MicSelector] Failed to enumerate devices:", err);
-      }
-    };
-
-    enumerateDevices();
-
-    // Re-enumerate when devices change
-    navigator.mediaDevices.addEventListener("devicechange", enumerateDevices);
-    return () => {
-      navigator.mediaDevices.removeEventListener("devicechange", enumerateDevices);
-    };
-  }, []);
-
-  useEffect(() => {
-    // Get currently active device
-    const activeDevice = room.localParticipant.activeDeviceMap.get("audioinput");
-    if (activeDevice) {
-      console.log("[MicSelector] Active microphone:", activeDevice);
-      setSelectedDevice(activeDevice);
-    }
-  }, [room.localParticipant]);
+  const {
+    devices: audioDevices,
+    activeDeviceId: selectedDevice,
+    setActiveMediaDevice: setActiveDevice,
+  } = useMediaDeviceSelect({ kind: "audioinput" });
 
   const handleDeviceChange = async (deviceId: string) => {
     console.log("[MicSelector] Switching microphone to:", deviceId);
     try {
-      await room.switchActiveDevice("audioinput", deviceId);
-      setSelectedDevice(deviceId);
+      await setActiveDevice(deviceId);
       console.log("[MicSelector] Microphone switched successfully");
     } catch (err) {
       console.error("[MicSelector] Failed to switch microphone:", err);
     }
   };
 
+  // Log available devices
+  useEffect(() => {
+    if (audioDevices.length > 0) {
+      console.log("[MicSelector] Available microphones:", audioDevices.length, audioDevices.map((d) => d.label));
+      console.log("[MicSelector] Active microphone:", selectedDevice);
+    }
+  }, [audioDevices, selectedDevice]);
+
   // Only show selector if multiple mics available
-  if (!audioDevices || audioDevices.length <= 1) {
+  if (audioDevices.length <= 1) {
     if (audioDevices.length === 1) {
       console.log("[MicSelector] Only one microphone available, hiding selector");
     }
@@ -215,7 +194,7 @@ function MicrophoneSelector() {
       </label>
       <select
         style={styles.micDropdown}
-        value={selectedDevice}
+        value={selectedDevice || ""}
         onChange={(e) => handleDeviceChange(e.target.value)}
       >
         {audioDevices.map((device) => (
