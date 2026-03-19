@@ -139,10 +139,12 @@ flyctl deploy
 
 ## Testing
 
+### Backend Tests
+
 Before pushing changes, always run:
 
 ```bash
-# Run all tests
+# Run backend unit tests
 make test
 
 # Run linting
@@ -151,11 +153,36 @@ make lint
 # Run all CI checks (recommended)
 make ci
 
-# Run integration tests (requires credentials)
+# Run backend integration tests (requires credentials)
 make integration-test
 ```
 
-See [AGENTS.md](AGENTS.md) for detailed developer workflow and pre-commit checklist.
+### Frontend E2E Tests
+
+End-to-end tests using Playwright:
+
+```bash
+cd frontend
+
+# Run E2E tests (headless)
+npm run test:e2e
+
+# Run E2E tests with UI mode (interactive)
+npm run test:e2e:ui
+
+# Run E2E tests in headed mode (see browser)
+npm run test:e2e:headed
+
+# Debug specific test
+npm run test:e2e:debug
+```
+
+**Test against production:**
+```bash
+BASE_URL=https://voice-agent-hub.fly.dev npm run test:e2e
+```
+
+See [AGENTS.md](AGENTS.md) for detailed developer workflow and [TESTING_PROPOSAL.md](TESTING_PROPOSAL.md) for comprehensive testing documentation.
 
 ## CI/CD
 
