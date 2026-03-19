@@ -314,6 +314,25 @@
 
 ### Frontend
 
+- [ ] **Issue #31: Silent-After-Thinking — Better State Feedback and Prompt Fallback**
+  - **Problem:** The agent sometimes finishes "thinking" and then produces no audio response, leaving the user with no feedback. Two separate causes need addressing:
+
+  - **1 — Frontend: thinking state has no timeout or stuck-state indicator**
+    - **File:** `frontend/src/pages/Call.tsx`
+    - `useVoiceAssistant()` returns a `vaState` string; the current map only handles `"listening"`, `"thinking"`, `"speaking"` — any other value silently falls back to `"listening"`, masking unexpected states.
+    - The UI shows "Thinking…" indefinitely with no escalation if it takes too long.
+    - **Fix:**
+      - Map all known LiveKit agent states explicitly (including `"initializing"`, `"idle"`, `"disconnected"`).
+      - Add a thinking timeout (e.g. 8 s): if `state` stays `"thinking"` without transitioning to `"speaking"`, update the label to "Taking longer than usual…" so the user knows the app hasn't frozen.
+      - Log unrecognised `vaState` values to the console so they surface during debugging.
+
+  - **2 — Agent prompt: no explicit fallback for silence**
+    - **File:** `skill/assets/agent/agent.py` — `VOICE_INSTRUCTIONS`
+    - When the LLM decides it has nothing to say (tool timeout, ambiguous input, empty gateway response), it returns an empty completion and the agent emits no audio.
+    - **Fix:** Add a fallback instruction to `VOICE_INSTRUCTIONS`, e.g.:
+      > "If you are unable to respond or need more time, always say so briefly (e.g. 'Give me a moment' or 'I didn't catch that — could you repeat?'). Never stay completely silent."
+    - Also consider: set a `max_response_timeout` on `AgentSession` if the SDK supports it, so silent completions are detected and a fallback TTS phrase is triggered server-side rather than relying on the LLM to self-correct.
+
 - [ ] **Issue #30: Microphone Level Indicator**
   - **File:** `frontend/src/pages/Call.tsx` — `AgentUI` / `MicPublisher` components
   - **Problem:** There is no visual feedback that the app is receiving the user's audio. Users can't tell if their mic is working, muted at the OS level, or picking up silence.
