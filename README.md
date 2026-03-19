@@ -80,7 +80,7 @@ cd frontend && npm run build
 **Step 1 — Request a device code:**
 ```
 POST /auth/device
-→ { device_code, verification_url, expires_in: 300 }
+→ { device_code, verification_url, expires_in: 900 }
 ```
 
 **Step 2 — Open `verification_url` in a browser**, enter name + email, click Approve.
@@ -137,9 +137,40 @@ flyctl secrets set \
 flyctl deploy
 ```
 
+## Testing
+
+Before pushing changes, always run:
+
+```bash
+# Run all tests
+make test
+
+# Run linting
+make lint
+
+# Run all CI checks (recommended)
+make ci
+
+# Run integration tests (requires credentials)
+make integration-test
+```
+
+See [AGENTS.md](AGENTS.md) for detailed developer workflow and pre-commit checklist.
+
+## CI/CD
+
+GitHub Actions runs on every push:
+- Backend unit tests
+- Linting (ruff)
+- Frontend build
+- Integration tests (master branch only)
+
 ## Security Notes
 
 - All API keys (LiveKit, Deepgram, OpenAI) are encrypted with Fernet before storage.
 - Session tokens are JWT signed with `HUB_SECRET`, expire in 30 days.
-- Device codes expire in 5 minutes.
-- `HUB_ENCRYPTION_KEY` and `HUB_SECRET` must be set before deploying — loss of the encryption key means stored API keys cannot be decrypted.
+- Device codes expire in 15 minutes.
+- Input validation on all user inputs (email, name, device codes).
+- XSS prevention with proper HTML/JavaScript escaping.
+- `HUB_ENCRYPTION_KEY` and `HUB_SECRET` **must** be set before deploying — loss of the encryption key means stored API keys cannot be decrypted.
+- Encryption key must be at least 32 characters for security.
