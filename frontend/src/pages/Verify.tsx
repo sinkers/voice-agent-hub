@@ -15,23 +15,33 @@ export default function Verify() {
 
   // Poll until the agent picks up the token
   const startPolling = useCallback(() => {
+    console.log("[Verify] Starting polling for device code:", code.substring(0, 8) + "...");
     const deadline = Date.now() + 5 * 60 * 1000; // 5 min
     pollRef.current = setInterval(async () => {
       if (Date.now() > deadline) {
+        console.error("[Verify] Polling timeout - agent did not connect");
         clearInterval(pollRef.current!);
         setStage("error");
         return;
       }
       try {
         const res = await fetch(`/auth/device/token?code=${encodeURIComponent(code)}`);
-        if (!res.ok) { clearInterval(pollRef.current!); setStage("error"); return; }
+        if (!res.ok) {
+          console.error("[Verify] Polling error, status:", res.status);
+          clearInterval(pollRef.current!);
+          setStage("error");
+          return;
+        }
         const data = await res.json();
+        console.log("[Verify] Poll response:", data.status || "has token");
         // Token present = agent has collected it
         if (data.token) {
+          console.log("[Verify] Agent connected successfully!");
           clearInterval(pollRef.current!);
           setStage("connected");
         }
-      } catch {
+      } catch (err) {
+        console.warn("[Verify] Polling network error (will retry):", err);
         // network blip — keep polling
       }
     }, 2000);
@@ -41,6 +51,7 @@ export default function Verify() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    console.log("[Verify] Submitting device approval:", { code: code.substring(0, 8) + "...", email, name });
     setFormError("");
     setLoading(true);
     try {
@@ -49,14 +60,18 @@ export default function Verify() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code, name, email }),
       });
+      console.log("[Verify] Verification response status:", res.status);
       if (res.ok) {
+        console.log("[Verify] Device approved, waiting for agent...");
         setStage("waiting");
         startPolling();
       } else {
         const data = await res.json();
+        console.error("[Verify] Verification failed:", data.detail);
         setFormError(data.detail ?? "Failed to approve connection.");
       }
-    } catch {
+    } catch (err) {
+      console.error("[Verify] Network error during verification:", err);
       setFormError("Network error. Please try again.");
     } finally {
       setLoading(false);

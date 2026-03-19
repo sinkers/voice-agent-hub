@@ -348,7 +348,7 @@
       > "If you are unable to respond or need more time, always say so briefly (e.g. 'Give me a moment' or 'I didn't catch that — could you repeat?'). Never stay completely silent."
     - Also consider: set a `max_response_timeout` on `AgentSession` if the SDK supports it, so silent completions are detected and a fallback TTS phrase is triggered server-side rather than relying on the LLM to self-correct.
 
-- [ ] **Issue #30: Microphone Level Indicator**
+- [x] **Issue #30: Microphone Level Indicator** ✅ FIXED
   - **File:** `frontend/src/pages/Call.tsx` — `AgentUI` / `MicPublisher` components
   - **Problem:** There is no visual feedback that the app is receiving the user's audio. Users can't tell if their mic is working, muted at the OS level, or picking up silence.
   - **Fix:** Add a real-time audio level indicator for the local mic track:
@@ -358,7 +358,7 @@
   - **Note:** `useLocalParticipant()` gives access to `localParticipant.getTrackPublication(Track.Source.Microphone)` to get the track ref; `useTrackVolume` accepts a `TrackPublication` or `LocalTrack`.
   - **UX detail:** Keep it subtle — a small ring of 3–5 bars next to the status badge is enough. Avoid anything that looks like a recording warning.
 
-- [ ] **Issue #29: Microphone Selector for Multi-Mic Users**
+- [x] **Issue #29: Microphone Selector for Multi-Mic Users** ✅ FIXED
   - **File:** `frontend/src/pages/Call.tsx`
   - **Problem:** `ControlBar` shows a single mic toggle with no way to choose between devices; users with multiple microphones (e.g. built-in + headset + USB) have no control over which one is active.
   - **Fix:** Add a device selector that:
