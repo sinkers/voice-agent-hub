@@ -196,7 +196,7 @@
 
 ### Security Improvements
 
-- [ ] **Issue #8: SQL Injection Risk from LIKE Pattern**
+- [x] **Issue #8: SQL Injection Risk from LIKE Pattern** ✅ FIXED
   - **File:** `backend/database.py:50-55`
   - **Problem:** Uses raw SQL with text() for deletion
   - **Fix:** Use parameterized SQLAlchemy queries
