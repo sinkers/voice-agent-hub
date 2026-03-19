@@ -173,16 +173,20 @@ class VerifyBody(BaseModel):
 
 @app.post("/auth/verify")
 async def verify_device(body: VerifyBody, db: AsyncSession = Depends(get_db)):
+    logger.info(f"Device verification attempt for code {body.code[:8]}... by {body.email}")
     result = await db.execute(select(DeviceCode).where(DeviceCode.code == body.code))
     device = result.scalar_one_or_none()
     if device is None:
+        logger.warning(f"Device code not found: {body.code[:8]}...")
         raise HTTPException(status_code=404, detail="Device code not found")
 
     now = datetime.now(UTC)
     if device.expires_at.replace(tzinfo=UTC) < now:
+        logger.warning(f"Device code expired: {body.code[:8]}...")
         raise HTTPException(status_code=400, detail="Device code expired")
 
     if device.approved:
+        logger.warning(f"Device code already approved: {body.code[:8]}...")
         raise HTTPException(status_code=400, detail="Already approved")
 
     # Find or create user
@@ -192,6 +196,7 @@ async def verify_device(body: VerifyBody, db: AsyncSession = Depends(get_db)):
         user = User(id=str(uuid.uuid4()), email=body.email, name=body.name)
         db.add(user)
         await db.flush()
+        logger.info(f"Created new user: {body.email}")
     elif not user.name and body.name:
         user.name = body.name
 
@@ -201,6 +206,7 @@ async def verify_device(body: VerifyBody, db: AsyncSession = Depends(get_db)):
     device.token = token
 
     await db.commit()
+    logger.info(f"Device verification successful for {body.email}")
     return {"ok": True}
 
 
@@ -225,6 +231,7 @@ async def register_agent(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    logger.info(f"Agent registration attempt: {body.agent_name} by user {current_user.email}")
     result = await db.execute(
         select(AgentRegistration).where(
             AgentRegistration.user_id == current_user.id,
@@ -234,6 +241,7 @@ async def register_agent(
     reg = result.scalar_one_or_none()
 
     if reg is None:
+        logger.info(f"Creating new agent registration: {body.agent_name}")
         reg = AgentRegistration(
             id=str(uuid.uuid4()),
             user_id=current_user.id,
@@ -247,6 +255,7 @@ async def register_agent(
         )
         db.add(reg)
     else:
+        logger.info(f"Updating existing agent registration: {body.agent_name}")
         reg.display_name = body.display_name
         reg.livekit_url = body.livekit_url
         reg.livekit_api_key = encrypt(body.livekit_api_key)
@@ -257,7 +266,9 @@ async def register_agent(
     try:
         await db.commit()
         await db.refresh(reg)
+        logger.info(f"Agent registration successful: {body.agent_name} (id: {reg.id})")
     except Exception as e:
+        logger.error(f"Agent registration failed for {body.agent_name}: {e}")
         await db.rollback()
         raise HTTPException(
             status_code=500, detail=f"Failed to register agent: {str(e)}"
@@ -346,15 +357,18 @@ async def _dispatch_agent(lk_url: str, lk_key: str, lk_secret: str,
 async def connect(body: ConnectBody, background_tasks: BackgroundTasks,
                   db: AsyncSession = Depends(get_db)):
     agent_id = body.agent_id
+    logger.info(f"Connect request for agent {agent_id}")
 
     result = await db.execute(
         select(AgentRegistration).where(AgentRegistration.id == agent_id)
     )
     reg = result.scalar_one_or_none()
     if reg is None:
+        logger.error(f"Connect failed: agent not found {agent_id}")
         raise HTTPException(status_code=404, detail="Agent not found")
 
     room_name = f"call-{secrets.token_hex(8)}"
+    logger.info(f"Created room {room_name} for agent {reg.agent_name}")
 
     # Issue LiveKit participant token
     lk_key = decrypt(reg.livekit_api_key)
@@ -481,12 +495,15 @@ async def delete_test_user(
     db: AsyncSession = Depends(get_db),
     _: None = Depends(_require_hub_secret),
 ):
+    logger.warning(f"Admin operation: deleting test user {user_id}")
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if user is None:
+        logger.error(f"Admin delete failed: user not found {user_id}")
         raise HTTPException(status_code=404, detail="User not found")
     await db.delete(user)
     await db.commit()
+    logger.info(f"Admin operation successful: deleted user {user_id}")
     return {"ok": True}
 
 
