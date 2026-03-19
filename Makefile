@@ -26,6 +26,15 @@ smoke-test:
 ifndef HUB_SECRET
 	$(error HUB_SECRET environment variable must be set for smoke tests)
 endif
+ifeq ($(and $(LIVEKIT_URL)$(call _env,LIVEKIT_URL)),)
+	$(error LIVEKIT_URL must be set either in environment or in agent .env file)
+endif
+ifeq ($(and $(LIVEKIT_API_KEY)$(call _env,LIVEKIT_API_KEY)),)
+	$(error LIVEKIT_API_KEY must be set either in environment or in agent .env file)
+endif
+ifeq ($(and $(LIVEKIT_API_SECRET)$(call _env,LIVEKIT_API_SECRET)),)
+	$(error LIVEKIT_API_SECRET must be set either in environment or in agent .env file)
+endif
 	HUB_SECRET=$(HUB_SECRET) \
 	LIVEKIT_URL=$(or $(LIVEKIT_URL),$(call _env,LIVEKIT_URL)) \
 	LIVEKIT_API_KEY=$(or $(LIVEKIT_API_KEY),$(call _env,LIVEKIT_API_KEY)) \
@@ -40,6 +49,15 @@ _env = $(shell grep -s "^$(1)=" $(_AGENT_ENV) | cut -d= -f2-)
 integration-test:
 ifndef HUB_SECRET
 	$(error HUB_SECRET environment variable must be set for integration tests)
+endif
+ifeq ($(and $(LIVEKIT_URL)$(call _env,LIVEKIT_URL)),)
+	$(error LIVEKIT_URL must be set either in environment or in agent .env file)
+endif
+ifeq ($(and $(LIVEKIT_API_KEY)$(call _env,LIVEKIT_API_KEY)),)
+	$(error LIVEKIT_API_KEY must be set either in environment or in agent .env file)
+endif
+ifeq ($(and $(LIVEKIT_API_SECRET)$(call _env,LIVEKIT_API_SECRET)),)
+	$(error LIVEKIT_API_SECRET must be set either in environment or in agent .env file)
 endif
 	HUB_SECRET=$(HUB_SECRET) \
 	LIVEKIT_URL=$(or $(LIVEKIT_URL),$(call _env,LIVEKIT_URL)) \

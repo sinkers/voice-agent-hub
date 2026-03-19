@@ -1,9 +1,13 @@
+import logging
+
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 from backend.config import settings
+
+logger = logging.getLogger(__name__)
 
 engine = create_async_engine(settings.database_url, echo=False)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
@@ -24,8 +28,8 @@ async def init_db() -> None:
         for sql in migrations:
             try:
                 await conn.execute(text(sql))
-            except OperationalError:
-                pass  # Column already exists
+            except OperationalError as e:
+                logger.info(f"Migration skipped (likely already applied): {sql} - {e}")
 
         # Deduplicate users by email — keep oldest, delete the rest
         await conn.execute(text("""
