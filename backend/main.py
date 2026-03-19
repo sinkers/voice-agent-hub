@@ -6,8 +6,6 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
 import jwt as _jwt
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,6 +27,8 @@ from backend.crypto import decrypt, encrypt
 from backend.database import get_db, init_db
 from backend.dependencies import get_current_user
 from backend.models import AgentRegistration, CallLog, DeviceCode, User
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
