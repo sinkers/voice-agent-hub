@@ -157,7 +157,8 @@ test('complete user journey: device auth to call', async ({ page, context }) => 
   // 4. User initiates call
   // 5. Verify call connection
 
-  // This tests the full integration
+  // This tests the full integration from device authorization to successful call connection,
+  // ensuring data flow and state transitions across pages, API endpoints, and LiveKit room setup
 });
 ```
 
@@ -392,15 +393,17 @@ frontend/
 
 ## Sample GitHub Actions Workflow
 
+**Note:** Component tests with React Testing Library are proposed for future implementation. Currently only E2E tests are implemented.
+
 ```yaml
-# .github/workflows/frontend-tests.yml
-name: Frontend Tests
-
-on: [push, pull_request]
-
-jobs:
-  component-tests:
+# .github/workflows/ci.yml (E2E tests section - IMPLEMENTED)
+# Note: Current implementation runs on master only to save CI minutes.
+# For stricter quality gates, consider running on PRs as well.
+  frontend-e2e:
     runs-on: ubuntu-latest
+    # Recommended: Run on PRs for earlier feedback
+    # if: github.ref == 'refs/heads/master'  # Current: master only
+    needs: [frontend-build]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -411,11 +414,27 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Run component tests
+      - name: Install Playwright browsers
         working-directory: frontend
-        run: npm run test:unit
+        run: npx playwright install --with-deps chromium
 
-  e2e-tests:
+      - name: Run E2E tests against production
+        working-directory: frontend
+        env:
+          # Best practice: Use secrets for environment URLs
+          BASE_URL: ${{ secrets.BASE_URL || 'https://voice-agent-hub.fly.dev' }}
+        run: npm run test:e2e
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
+
+  # Future: Component tests with Vitest + React Testing Library
+  # component-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
