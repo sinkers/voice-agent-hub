@@ -285,6 +285,27 @@
     needs: [frontend-build]
   ```
 
+- [ ] **Issue #28: Set Up Dev/Staging Environment**
+  - **Problem:** Only production environment exists; risky to test changes directly in prod
+  - **Risk:** Breaking changes deployed to users without validation
+  - **Fix:** Create separate Fly.io app for dev/staging
+  - **Requirements:**
+    - Create new Fly app: `voice-agent-hub-dev` or `voice-agent-hub-staging`
+    - Deploy feature branches to dev for manual testing
+    - E2E tests can run against dev environment
+    - Separate database and secrets from production
+    - Enable testing of UI changes (mic selector, audio indicators) before prod merge
+  - **Workflow:**
+    1. Create Fly app: `flyctl apps create voice-agent-hub-dev`
+    2. Create volume: `flyctl volumes create hub_data --app voice-agent-hub-dev`
+    3. Set secrets (same as prod but separate instance)
+    4. Add deployment script for feature branches
+  - **Benefits:**
+    - Safe testing of urgent changes (like mic selector)
+    - Preview deployments for PRs
+    - Can share dev URLs with testers
+    - No risk to production users
+
 ### Code Organization
 
 - [ ] **Issue #12: Inconsistent Error Response Format**
