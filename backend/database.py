@@ -1,6 +1,6 @@
 import logging
 
-from sqlalchemy import text
+from sqlalchemy import delete, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
@@ -18,6 +18,9 @@ class Base(DeclarativeBase):
 
 
 async def init_db() -> None:
+    # Import models here to avoid circular dependency
+    from backend.models import User
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         # Add columns introduced after initial schema (SQLite doesn't support
@@ -52,12 +55,12 @@ async def init_db() -> None:
         """))
 
         # Remove stale test users (integration test cleanup that didn't complete)
-        await conn.execute(text("""
-            DELETE FROM users WHERE email LIKE 'inttest-%@example.com'
-        """))
-        await conn.execute(text("""
-            DELETE FROM users WHERE email = 'smoke-test@example.com'
-        """))
+        await conn.execute(
+            delete(User).where(User.email.like("inttest-%@example.com"))
+        )
+        await conn.execute(
+            delete(User).where(User.email == "smoke-test@example.com")
+        )
 
 
 async def get_db() -> AsyncSession:  # type: ignore[return]
