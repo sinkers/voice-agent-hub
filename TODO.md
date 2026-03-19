@@ -392,7 +392,7 @@
   - **Problem:** Commented-out dead code suggests incomplete OAuth integration
   - **Fix:** Remove unused Google OAuth references or complete the implementation
 
-- [ ] **Deprecation Warning: FastAPI on_event**
+- [x] **Deprecation Warning: FastAPI on_event** ✅ FIXED
   - **File:** `backend/main.py:41`
   - **Warning:** `@app.on_event("startup")` is deprecated
   - **Fix:** Migrate to lifespan event handlers
