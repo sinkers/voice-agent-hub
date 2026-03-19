@@ -251,8 +251,14 @@ async def register_agent(
         reg.deepgram_api_key = encrypt(body.deepgram_api_key)
         reg.openai_api_key = encrypt(body.openai_api_key)
 
-    await db.commit()
-    await db.refresh(reg)
+    try:
+        await db.commit()
+        await db.refresh(reg)
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=500, detail=f"Failed to register agent: {str(e)}"
+        ) from e
 
     call_url_base = f"{settings.base_url}/call?agent_id={reg.id}"
     return {"agent_id": reg.id, "call_url_base": call_url_base}
