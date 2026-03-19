@@ -23,7 +23,10 @@ _AGENT_ENV := $(or $(AGENT_REPO),$(HOME)/Documents/livekit-agent)/.env
 _env = $(shell grep -s "^$(1)=" $(_AGENT_ENV) | cut -d= -f2-)
 
 smoke-test:
-	HUB_SECRET=$(or $(HUB_SECRET),6c20986d23d3010a2ed87b3f72c6eb63b4eaf62d88570056d598fd068ad22145) \
+ifndef HUB_SECRET
+	$(error HUB_SECRET environment variable must be set for smoke tests)
+endif
+	HUB_SECRET=$(HUB_SECRET) \
 	LIVEKIT_URL=$(or $(LIVEKIT_URL),$(call _env,LIVEKIT_URL)) \
 	LIVEKIT_API_KEY=$(or $(LIVEKIT_API_KEY),$(call _env,LIVEKIT_API_KEY)) \
 	LIVEKIT_API_SECRET=$(or $(LIVEKIT_API_SECRET),$(call _env,LIVEKIT_API_SECRET)) \
@@ -35,7 +38,10 @@ _AGENT_ENV := $(or $(AGENT_REPO),$(HOME)/Documents/livekit-agent)/.env
 _env = $(shell grep -s "^$(1)=" $(_AGENT_ENV) | cut -d= -f2-)
 
 integration-test:
-	HUB_SECRET=$(or $(HUB_SECRET),6c20986d23d3010a2ed87b3f72c6eb63b4eaf62d88570056d598fd068ad22145) \
+ifndef HUB_SECRET
+	$(error HUB_SECRET environment variable must be set for integration tests)
+endif
+	HUB_SECRET=$(HUB_SECRET) \
 	LIVEKIT_URL=$(or $(LIVEKIT_URL),$(call _env,LIVEKIT_URL)) \
 	LIVEKIT_API_KEY=$(or $(LIVEKIT_API_KEY),$(call _env,LIVEKIT_API_KEY)) \
 	LIVEKIT_API_SECRET=$(or $(LIVEKIT_API_SECRET),$(call _env,LIVEKIT_API_SECRET)) \

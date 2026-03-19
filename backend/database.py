@@ -1,4 +1,5 @@
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -23,7 +24,7 @@ async def init_db() -> None:
         for sql in migrations:
             try:
                 await conn.execute(text(sql))
-            except Exception:
+            except OperationalError:
                 pass  # Column already exists
 
         # Deduplicate users by email — keep oldest, delete the rest
