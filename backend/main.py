@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.auth import (
+    DEVICE_CODE_EXPIRES,
     create_session_token,
     device_code_expiry,
     generate_device_code,
@@ -51,7 +52,7 @@ async def startup() -> None:
 class DeviceAuthResponse(BaseModel):
     device_code: str
     verification_url: str
-    expires_in: int = 300
+    expires_in: int = int(DEVICE_CODE_EXPIRES.total_seconds())
 
 
 @app.post("/auth/device", response_model=DeviceAuthResponse)
@@ -67,7 +68,7 @@ async def create_device_code(db: AsyncSession = Depends(get_db)):
     return DeviceAuthResponse(
         device_code=code,
         verification_url=f"{settings.base_url}/auth/verify?code={code}",
-        expires_in=900,
+        expires_in=int(DEVICE_CODE_EXPIRES.total_seconds()),
     )
 
 
