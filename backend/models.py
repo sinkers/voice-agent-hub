@@ -15,7 +15,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
-    email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    email: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String, nullable=False, default="")
     google_id: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -34,7 +34,7 @@ class AgentRegistration(Base):
     __tablename__ = "agent_registrations"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     agent_name: Mapped[str] = mapped_column(String, nullable=False)
     display_name: Mapped[str] = mapped_column(String, nullable=False, default="")
     livekit_url: Mapped[str] = mapped_column(String, nullable=False)
@@ -72,10 +72,10 @@ class CallLog(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     agent_id: Mapped[str] = mapped_column(
-        ForeignKey("agent_registrations.id"), nullable=False
+        ForeignKey("agent_registrations.id"), nullable=False, index=True
     )
     user_id: Mapped[str | None] = mapped_column(
-        ForeignKey("users.id"), nullable=True
+        ForeignKey("users.id"), nullable=True, index=True
     )
     room_name: Mapped[str] = mapped_column(String, nullable=False)
     started_at: Mapped[datetime] = mapped_column(
