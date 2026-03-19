@@ -1,4 +1,5 @@
 import {
+  ControlBar,
   LiveKitRoom,
   RoomAudioRenderer,
   useVoiceAssistant,
@@ -103,6 +104,7 @@ export default function Call() {
     >
       <RoomAudioRenderer />
       <MicPublisher />
+      <ControlBar controls={{ microphone: true, camera: false, screenShare: false, leave: false }} />
       <AgentUI
         agentName={connectResult.agent}
         state={agentState}
