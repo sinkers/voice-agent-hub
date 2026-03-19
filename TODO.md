@@ -85,7 +85,7 @@
   expires_in: int = 900
   ```
 
-- [ ] **Issue #6: Race Condition in Device Code Approval**
+- [x] **Issue #6: Race Condition in Device Code Approval** ✅ ALREADY FIXED
   - **File:** `backend/main.py:157-187`
   - **Problem:** No check preventing duplicate approvals of same device code
   - **Risk:** Concurrent requests could cause inconsistent state
@@ -97,7 +97,7 @@
   # ... rest of logic
   ```
 
-- [ ] **Issue #7: Missing Input Validation on Email & Name**
+- [x] **Issue #7: Missing Input Validation on Email & Name** ✅ FIXED
   - **File:** `backend/main.py:151-155`
   - **Problem:** No length limits, format validation, or sanitization
   - **Risk:** Unicode/homograph attacks, buffer issues, invalid data
