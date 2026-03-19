@@ -1,4 +1,4 @@
-.PHONY: test lint lint-fix build-frontend smoke-test integration-test test-all ci
+.PHONY: test lint lint-fix build-frontend smoke-test integration-test test-all ci deploy
 
 test:
 	uv run pytest tests/ -v
@@ -68,3 +68,11 @@ endif
 	uv run pytest tests/integration/ -v
 
 test-all: ci integration-test
+
+deploy:
+	@command -v fly >/dev/null 2>&1 || { echo "Error: fly CLI not installed. Install from https://fly.io/docs/hands-on/install-flyctl/"; exit 1; }
+	@echo "Building frontend..."
+	cd frontend && npm ci && npm run build
+	@echo "Deploying to Fly.io..."
+	fly deploy --remote-only
+	@echo "Deployment complete!"
