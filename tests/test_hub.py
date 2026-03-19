@@ -236,3 +236,59 @@ async def test_agent_config_bad_token(app_client):
         headers={"Authorization": "Bearer invalid.token.here"},
     )
     assert resp.status_code in (401, 403)
+
+
+# ---------------------------------------------------------------------------
+# 7. Device code duplicate approval tests (Issue #21)
+# ---------------------------------------------------------------------------
+
+
+async def test_device_code_reapproval_rejected(app_client: AsyncClient):
+    """Re-approving an already-approved device code must return 400."""
+    # Create device code
+    resp = await app_client.post("/auth/device")
+    assert resp.status_code == 200
+    code = resp.json()["device_code"]
+
+    # First approval succeeds
+    resp = await app_client.post(
+        "/auth/verify",
+        json={"code": code, "name": "Bob", "email": "bob@example.com"},
+    )
+    assert resp.status_code == 200
+
+    # Second approval on same code fails with 400
+    resp = await app_client.post(
+        "/auth/verify",
+        json={"code": code, "name": "Bob", "email": "bob@example.com"},
+    )
+    assert resp.status_code == 400
+    data = resp.json()
+    assert data.get("detail") in {"Already approved", "Device code expired"}
+
+
+async def test_device_code_concurrent_approval(app_client: AsyncClient):
+    """Concurrent approvals: exactly one succeeds, one is rejected."""
+    # Create device code
+    resp = await app_client.post("/auth/device")
+    assert resp.status_code == 200
+    code = resp.json()["device_code"]
+
+    async def approve(email: str):
+        return await app_client.post(
+            "/auth/verify",
+            json={"code": code, "name": "User", "email": email},
+        )
+
+    import asyncio
+
+    # Fire two approvals concurrently
+    r1, r2 = await asyncio.gather(
+        approve("concurrent1@example.com"),
+        approve("concurrent2@example.com"),
+    )
+
+    statuses = sorted([r1.status_code, r2.status_code])
+    assert statuses == [200, 400]
+    loser = r1 if r1.status_code == 400 else r2
+    assert loser.json().get("detail") in {"Already approved", "Device code expired"}
