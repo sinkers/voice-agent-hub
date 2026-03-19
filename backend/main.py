@@ -1,8 +1,11 @@
 import asyncio
+import logging
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 import jwt as _jwt
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
@@ -316,14 +319,27 @@ class ConnectBody(BaseModel):
 async def _dispatch_agent(lk_url: str, lk_key: str, lk_secret: str,
                            agent_name: str, room_name: str) -> None:
     """Dispatch agent after a short delay so the caller can join first."""
-    await asyncio.sleep(1.5)
-    async with livekit_api.LiveKitAPI(url=lk_url, api_key=lk_key, api_secret=lk_secret) as lk:
-        await lk.agent_dispatch.create_dispatch(
-            livekit_api.CreateAgentDispatchRequest(
-                agent_name=agent_name,
-                room=room_name,
-            )
+    # Validate all required parameters
+    if not all([lk_url, lk_key, lk_secret, agent_name, room_name]):
+        logger.error(
+            f"Invalid credentials for agent dispatch to {room_name}: "
+            f"url={bool(lk_url)}, key={bool(lk_key)}, secret={bool(lk_secret)}, "
+            f"agent={bool(agent_name)}"
         )
+        return
+
+    try:
+        await asyncio.sleep(1.5)
+        async with livekit_api.LiveKitAPI(url=lk_url, api_key=lk_key, api_secret=lk_secret) as lk:
+            await lk.agent_dispatch.create_dispatch(
+                livekit_api.CreateAgentDispatchRequest(
+                    agent_name=agent_name,
+                    room=room_name,
+                )
+            )
+        logger.info(f"Agent {agent_name} dispatched to room {room_name}")
+    except Exception as e:
+        logger.error(f"Agent dispatch failed for {room_name}: {e}", exc_info=True)
 
 
 @app.post("/connect")

@@ -126,7 +126,7 @@
       raise HTTPException(status_code=500, detail=f"Failed to register agent: {str(e)}")
   ```
 
-- [ ] **Issue #11: Null/Optional Field Never Checked in Call Dispatch**
+- [x] **Issue #11: Null/Optional Field Never Checked in Call Dispatch** ✅ FIXED
   - **File:** `backend/main.py:296-307`
   - **Problem:** Background agent dispatch fails silently if credentials invalid
   - **Risk:** Agent never joins call, user hears nothing
@@ -313,6 +313,27 @@
   - Add test: UTC handling in datetime comparisons
 
 ### Frontend
+
+- [ ] **Issue #30: Microphone Level Indicator**
+  - **File:** `frontend/src/pages/Call.tsx` — `AgentUI` / `MicPublisher` components
+  - **Problem:** There is no visual feedback that the app is receiving the user's audio. Users can't tell if their mic is working, muted at the OS level, or picking up silence.
+  - **Fix:** Add a real-time audio level indicator for the local mic track:
+    - Use `useTrackVolume(localMicTrack)` from `@livekit/components-react` to get a 0–1 amplitude value on each audio frame.
+    - Render it as animated bars or a pulsing ring around/near the existing "Listening" badge — active only when `state === "listening"`.
+    - The indicator should visually quiet down when the user stops talking and disappear (or grey out) when the mic is muted via `ControlBar`.
+  - **Note:** `useLocalParticipant()` gives access to `localParticipant.getTrackPublication(Track.Source.Microphone)` to get the track ref; `useTrackVolume` accepts a `TrackPublication` or `LocalTrack`.
+  - **UX detail:** Keep it subtle — a small ring of 3–5 bars next to the status badge is enough. Avoid anything that looks like a recording warning.
+
+- [ ] **Issue #29: Microphone Selector for Multi-Mic Users**
+  - **File:** `frontend/src/pages/Call.tsx`
+  - **Problem:** `ControlBar` shows a single mic toggle with no way to choose between devices; users with multiple microphones (e.g. built-in + headset + USB) have no control over which one is active.
+  - **Fix:** Add a device selector that:
+    - Enumerates available audio input devices via `navigator.mediaDevices.enumerateDevices()` (filter `kind === "audioinput"`)
+    - Shows a small chevron/selector icon next to the existing mic button, visible only when `> 1` audio input is available
+    - Displays the currently active device label so the user always knows which mic is live
+    - On selection, switches the active mic via LiveKit's `localParticipant.switchActiveDevice("audioinput", deviceId)`
+  - **Note:** `@livekit/components-react` exposes `useMediaDeviceSelect` and `MediaDeviceMenu` — check if these cover the requirement before building custom UI.
+  - **UX detail:** If only one mic is present, the selector should be hidden entirely to avoid clutter.
 
 - [ ] **Issue #17: Frontend Missing Error Boundary**
   - **File:** `frontend/src/App.tsx`
