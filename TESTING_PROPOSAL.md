@@ -397,9 +397,12 @@ frontend/
 
 ```yaml
 # .github/workflows/ci.yml (E2E tests section - IMPLEMENTED)
+# Note: Current implementation runs on master only to save CI minutes.
+# For stricter quality gates, consider running on PRs as well.
   frontend-e2e:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master'
+    # Recommended: Run on PRs for earlier feedback
+    # if: github.ref == 'refs/heads/master'  # Current: master only
     needs: [frontend-build]
     steps:
       - uses: actions/checkout@v4
@@ -418,7 +421,8 @@ frontend/
       - name: Run E2E tests against production
         working-directory: frontend
         env:
-          BASE_URL: https://voice-agent-hub.fly.dev
+          # Best practice: Use secrets for environment URLs
+          BASE_URL: ${{ secrets.BASE_URL || 'https://voice-agent-hub.fly.dev' }}
         run: npm run test:e2e
 
       - name: Upload test results
