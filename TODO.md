@@ -270,6 +270,21 @@
             FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
   ```
 
+- [ ] **Issue #27: Run E2E Tests on Pull Requests**
+  - **File:** `.github/workflows/ci.yml`
+  - **Problem:** Frontend E2E tests only run on master, missing quality gate for PRs
+  - **Risk:** UI bugs merged before being caught by automated tests
+  - **Fix:** Remove `if: github.ref == 'refs/heads/master'` condition from frontend-e2e job
+  - **Benefit:** Catch frontend regressions before merge, faster feedback loop
+  - **Consideration:** Will increase CI minutes usage, but provides valuable quality gate
+  ```yaml
+  frontend-e2e:
+    runs-on: ubuntu-latest
+    # Remove this line to run on PRs:
+    # if: github.ref == 'refs/heads/master'
+    needs: [frontend-build]
+  ```
+
 ### Code Organization
 
 - [ ] **Issue #12: Inconsistent Error Response Format**
