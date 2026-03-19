@@ -2,6 +2,7 @@ import asyncio
 import logging
 import secrets
 import uuid
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -29,7 +30,16 @@ from backend.database import get_db, init_db
 from backend.dependencies import get_current_user
 from backend.models import AgentRegistration, CallLog, DeviceCode, User
 
-app = FastAPI(title="Voice Agent Hub")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    await init_db()
+    yield
+    # Shutdown (if needed in future)
+
+
+app = FastAPI(title="Voice Agent Hub", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -40,11 +50,6 @@ app.add_middleware(
 )
 
 STATIC_DIR = Path(__file__).parent / "static"
-
-
-@app.on_event("startup")
-async def startup() -> None:
-    await init_db()
 
 
 # ---------------------------------------------------------------------------
