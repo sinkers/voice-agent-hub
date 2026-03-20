@@ -292,3 +292,41 @@ async def test_device_code_concurrent_approval(app_client: AsyncClient):
     assert statuses == [200, 400]
     loser = r1 if r1.status_code == 400 else r2
     assert loser.json().get("detail") == "Already approved"
+
+
+# ---------------------------------------------------------------------------
+# 8. Decryption failure tests (Issue #22)
+# ---------------------------------------------------------------------------
+
+
+async def test_agent_config_decryption_failure(app_client: AsyncClient, db_session):
+    """Agent config endpoint should handle decryption failures gracefully."""
+    from sqlalchemy import update
+
+    from backend.models import AgentRegistration
+
+    # Register agent normally
+    token = await complete_device_flow(app_client)
+    await register_agent(app_client, token)
+
+    # Corrupt the encrypted data in the database by setting it to an invalid value
+    await db_session.execute(
+        update(AgentRegistration).values(livekit_api_key="corrupted_invalid_data")
+    )
+    await db_session.commit()
+
+    # Attempt to fetch config - should fail gracefully
+    resp = await app_client.get(
+        "/agent/config",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    # Should return 500 with a safe error message
+    assert resp.status_code == 500
+    data = resp.json()
+    assert "detail" in data
+    # Error message should not leak sensitive information like encryption keys or raw errors
+    assert "Failed to retrieve agent configuration" in data["detail"]
+    # Should NOT contain sensitive information
+    assert "InvalidToken" not in data["detail"]
+    assert "corrupt" not in data["detail"].lower()

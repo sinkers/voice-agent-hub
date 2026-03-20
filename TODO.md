@@ -338,9 +338,10 @@
   - Also hardened `/auth/verify` against races via an atomic conditional update in
     `backend/main.py` (approve only if not already approved), ensuring exactly one approval succeeds.
 
-- [ ] **Issue #22: No Test for Encryption/Decryption Roundtrip Failure**
-  - Add test: `/agent/config` endpoint when decryption fails
-  - Add error handling for decryption failures
+- [x] **Issue #22: No Test for Encryption/Decryption Roundtrip Failure** ✅ FIXED
+  - Added test `test_agent_config_decryption_failure` in `tests/test_hub.py`
+  - Added error handling in `/agent/config` endpoint (`backend/main.py`)
+  - Decryption failures now return 500 with safe error message that doesn't leak sensitive information
 
 - [ ] **Issue #23: Missing Authorization Tests**
   - Add test: User A cannot access user B's agent configs via `/agent/config`
