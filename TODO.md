@@ -331,9 +331,12 @@
 
 ### Testing
 
-- [ ] **Issue #21: No Test for Device Code Duplicate Approval**
-  - Add test: Concurrent approvals of same device code
-  - Add test: Re-approval of already-approved device code
+- [x] **Issue #21: No Test for Device Code Duplicate Approval** ✅ FIXED
+  - Added tests in `tests/test_hub.py`:
+    - `test_device_code_reapproval_rejected`
+    - `test_device_code_concurrent_approval`
+  - Also hardened `/auth/verify` against races via an atomic conditional update in
+    `backend/main.py` (approve only if not already approved), ensuring exactly one approval succeeds.
 
 - [ ] **Issue #22: No Test for Encryption/Decryption Roundtrip Failure**
   - Add test: `/agent/config` endpoint when decryption fails

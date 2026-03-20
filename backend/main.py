@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from livekit import api as livekit_api
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.auth import (
@@ -206,9 +206,21 @@ async def verify_device(body: VerifyBody, db: AsyncSession = Depends(get_db)):
         user.name = body.name
 
     token = create_session_token(user.id)
-    device.user_id = user.id
-    device.approved = True
-    device.token = token
+
+    # Atomically approve the device code only if not already approved
+    result = await db.execute(
+        update(DeviceCode)
+        .where(DeviceCode.code == body.code, DeviceCode.approved.is_(False))
+        .values(user_id=user.id, approved=True, token=token)
+    )
+
+    if result.rowcount == 0:
+        # Another request approved it in the meantime
+        logger.warning(
+            f"Device code already approved (race detected): {body.code[:8]}..."
+        )
+        await db.rollback()
+        raise HTTPException(status_code=400, detail="Already approved")
 
     await db.commit()
     logger.info(f"Device verification successful for {body.email}")
