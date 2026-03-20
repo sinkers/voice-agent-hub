@@ -2,6 +2,22 @@
 
 This guide is for developers working on the voice-agent-hub codebase.
 
+## Workflow
+1. An agent picks up a ticket or is assigned a ticket to work
+2. Ticket is reviewed and if there are any questions the agent needs to ask those questions to the requestor or on the ticket, if no questions proceed
+3. The agent should then map out how they are planning to address the change and communicate to the requestor or on the ticket, proceed this is not a blocking request for validation
+4. Work should be done in small chunks and always on their own branch
+5. A test is written to validate the planned change
+6. The change is implemented
+7. All tests are run locally to confirm the change doesn't break anything and that the target test passes
+8. When the local work is completed, all tests are run and must pass before pushing to github
+9. Make sure the README.md, AGENTS.md and any other relevant documentation is updated to cover any changes made
+10. A PR is raised, all CD/CD must pass
+11. Wait for a review from gemini which will automatically occur on the repository, once the comments appear address ALL of the comments on the PR
+12. When all of the comments are addressed and CI is green it is OK to close the PR and merge the change
+13. Move on to the next ticket if there is one available or wait for assignment
+
+
 ## Development Workflow
 
 ### Before Pushing to GitHub
