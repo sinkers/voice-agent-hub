@@ -264,7 +264,7 @@ async def test_device_code_reapproval_rejected(app_client: AsyncClient):
     )
     assert resp.status_code == 400
     data = resp.json()
-    assert data.get("detail") in {"Already approved", "Device code expired"}
+    assert data.get("detail") == "Already approved"
 
 
 async def test_device_code_concurrent_approval(app_client: AsyncClient):
@@ -291,4 +291,4 @@ async def test_device_code_concurrent_approval(app_client: AsyncClient):
     statuses = sorted([r1.status_code, r2.status_code])
     assert statuses == [200, 400]
     loser = r1 if r1.status_code == 400 else r2
-    assert loser.json().get("detail") in {"Already approved", "Device code expired"}
+    assert loser.json().get("detail") == "Already approved"
