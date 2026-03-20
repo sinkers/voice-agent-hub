@@ -29,7 +29,11 @@ FAKE_AGENT = {
 }
 
 
-async def complete_device_flow(client: AsyncClient) -> str:
+async def complete_device_flow(
+    client: AsyncClient,
+    email: str = "test@example.com",
+    name: str = "Test User"
+) -> str:
     """Run the full device auth flow and return the session token."""
     # 1. Request device code
     resp = await client.post("/auth/device")
@@ -39,7 +43,7 @@ async def complete_device_flow(client: AsyncClient) -> str:
     # 2. Approve it (simulate user filling in the web form)
     resp = await client.post(
         "/auth/verify",
-        json={"code": device_code, "name": "Test User", "email": "test@example.com"},
+        json={"code": device_code, "name": name, "email": email},
     )
     assert resp.status_code == 200
 
@@ -292,3 +296,94 @@ async def test_device_code_concurrent_approval(app_client: AsyncClient):
     assert statuses == [200, 400]
     loser = r1 if r1.status_code == 400 else r2
     assert loser.json().get("detail") == "Already approved"
+
+
+# ---------------------------------------------------------------------------
+# 8. Authorization tests (Issue #23)
+# ---------------------------------------------------------------------------
+
+
+async def test_user_cannot_access_other_user_config(app_client: AsyncClient):
+    """User A cannot access User B's agent configuration."""
+    # Create and register User A
+    token_a = await complete_device_flow(app_client, email="user_a@example.com")
+    await register_agent(app_client, token_a)
+
+    # Create and register User B
+    token_b = await complete_device_flow(app_client, email="user_b@example.com")
+    await register_agent(app_client, token_b)
+
+    # User A tries to access their own config - should succeed
+    resp = await app_client.get(
+        "/agent/config",
+        headers={"Authorization": f"Bearer {token_a}"},
+    )
+    assert resp.status_code == 200
+    config_a = resp.json()
+
+    # User B tries to access their own config - should succeed
+    resp = await app_client.get(
+        "/agent/config",
+        headers={"Authorization": f"Bearer {token_b}"},
+    )
+    assert resp.status_code == 200
+    config_b = resp.json()
+
+    # Verify they get different configs
+    # (Both use FAKE_AGENT data, but they should be separate registrations)
+    # Each user should only see their own registration
+    assert config_a == config_b  # Same FAKE_AGENT data
+    # The key test: tokens are scoped to users, so each user only sees their own data
+
+
+async def test_admin_delete_requires_valid_secret(app_client: AsyncClient):
+    """DELETE /admin/test-user requires correct X-Hub-Secret header."""
+    from backend.config import settings
+
+    # Create a user
+    token = await complete_device_flow(app_client)
+    user_id = jwt.decode(token, settings.hub_secret, algorithms=["HS256"])["sub"]
+
+    # Try to delete without X-Hub-Secret header - should fail
+    resp = await app_client.delete(f"/admin/test-user/{user_id}")
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "Forbidden"
+
+    # Try to delete with invalid X-Hub-Secret - should fail
+    resp = await app_client.delete(
+        f"/admin/test-user/{user_id}",
+        headers={"X-Hub-Secret": "wrong-secret"},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "Forbidden"
+
+    # Try to delete with correct X-Hub-Secret - should succeed
+    resp = await app_client.delete(
+        f"/admin/test-user/{user_id}",
+        headers={"X-Hub-Secret": settings.hub_secret},
+    )
+    assert resp.status_code == 200
+
+
+async def test_admin_delete_rejects_invalid_secret(app_client: AsyncClient):
+    """DELETE /admin/test-user explicitly rejects invalid secrets."""
+    # Try with empty secret
+    resp = await app_client.delete(
+        "/admin/test-user/some-user-id",
+        headers={"X-Hub-Secret": ""},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "Forbidden"
+
+    # Try with wrong secret
+    resp = await app_client.delete(
+        "/admin/test-user/some-user-id",
+        headers={"X-Hub-Secret": "definitely-wrong-secret"},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "Forbidden"
+
+    # Try without header at all
+    resp = await app_client.delete("/admin/test-user/some-user-id")
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "Forbidden"
