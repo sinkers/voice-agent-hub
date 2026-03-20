@@ -310,14 +310,21 @@ async def agent_config(
     if reg is None:
         raise HTTPException(status_code=404, detail="No agent registered")
 
-    return {
-        "display_name": reg.display_name,
-        "livekit_url": reg.livekit_url,
-        "livekit_api_key": decrypt(reg.livekit_api_key),
-        "livekit_api_secret": decrypt(reg.livekit_api_secret),
-        "deepgram_api_key": decrypt(reg.deepgram_api_key),
-        "openai_api_key": decrypt(reg.openai_api_key),
-    }
+    try:
+        return {
+            "display_name": reg.display_name,
+            "livekit_url": reg.livekit_url,
+            "livekit_api_key": decrypt(reg.livekit_api_key),
+            "livekit_api_secret": decrypt(reg.livekit_api_secret),
+            "deepgram_api_key": decrypt(reg.deepgram_api_key),
+            "openai_api_key": decrypt(reg.openai_api_key),
+        }
+    except Exception as e:
+        logger.error(f"Failed to decrypt agent configuration for user {current_user.id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve agent configuration"
+        ) from None
 
 
 @app.post("/agent/heartbeat")
