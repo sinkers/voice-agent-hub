@@ -342,10 +342,11 @@
   - Add test: `/agent/config` endpoint when decryption fails
   - Add error handling for decryption failures
 
-- [ ] **Issue #23: Missing Authorization Tests**
-  - Add test: User A cannot access user B's agent configs via `/agent/config`
-  - Add test: `/DELETE /admin/test-user` requires correct X-Hub-Secret
-  - Add test: `/DELETE /admin/test-user` rejects invalid secret
+- [x] **Issue #23: Missing Authorization Tests** ✅ FIXED
+  - Added test `test_user_cannot_access_other_user_config`: Verifies user isolation
+  - Added test `test_admin_delete_requires_valid_secret`: Validates admin endpoint requires correct secret
+  - Added test `test_admin_delete_rejects_invalid_secret`: Confirms invalid secrets are rejected
+  - Updated `complete_device_flow` helper to accept optional email and name parameters
 
 - [ ] **Issue #24: Missing Timezone Tests**
   - Add test: Device code expiry with different timezone scenarios
